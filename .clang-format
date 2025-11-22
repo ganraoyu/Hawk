@@ -1,18 +1,10 @@
+# Use Allman braces style (opening braces on a new line)
 BasedOnStyle: LLVM
-IndentWidth: 4
+BreakBeforeBraces: Allman
 
-BraceWrapping:
-  AfterFunction: true
-  AfterClass: true
-  AfterControlStatement: true
-  AfterNamespace: true
-  AfterEnum: true
-  AfterStruct: true
-  BeforeElse: true
-  BeforeCatch: true
-
-AllowShortFunctionsOnASingleLine: false
+# Other recommended settings
+IndentWidth: 4          # 4 spaces per indent
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100        # max line width
 AllowShortIfStatementsOnASingleLine: false
-AllowShortLoopsOnASingleLine: false
-AllowShortEnumsOnASingleLine: false
-AllowShortBlocksOnASingleLine: Never

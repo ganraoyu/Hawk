@@ -2,26 +2,33 @@
 #include <algorithm>
 #include <numeric>
 
-bool OrderBook::CanMatch(Side side, Price price) const {
-    if (side == Side::Buy) {
+bool OrderBook::CanMatch(Side side, Price price) const
+{
+    if (side == Side::Buy)
+    {
         if (asks_.empty())
             return false;
         return price >= asks_.begin()->first;
-    } else {
+    }
+    else
+    {
         if (bids_.empty())
             return false;
         return price <= bids_.begin()->first;
     }
 }
 
-bool OrderBook::CanMatchMarket(Side side, Price price) {
+bool OrderBook::CanMatchMarket(Side side, Price price)
+{
     return (side == Side::Buy) ? !asks_.empty() : !bids_.empty();
 }
 
-Trades OrderBook::MatchOrder() {
+Trades OrderBook::MatchOrder()
+{
     Trades trades;
 
-    while (!bids_.empty() && !asks_.empty()) {
+    while (!bids_.empty() && !asks_.empty())
+    {
         auto &bidPrice = bids_.begin()->first;
         auto &bidList = bids_.begin()->second;
         auto &askPrice = asks_.begin()->first;
@@ -30,24 +37,26 @@ Trades OrderBook::MatchOrder() {
         if (bidPrice < askPrice)
             break;
 
-        while (!bidList.empty() && !askList.empty()) {
+        while (!bidList.empty() && !askList.empty())
+        {
             auto bid = bidList.front();
             auto ask = askList.front();
 
-            Quantity qty = std::min(bid->GetRemainingQuantity(),
-                                    ask->GetRemainingQuantity());
+            Quantity qty = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
             bid->Fill(qty);
             ask->Fill(qty);
 
             trades.push_back(Trade{{bid->GetOrderId(), bid->GetPrice(), qty},
                                    {ask->GetOrderId(), ask->GetPrice(), qty}});
 
-            if (bid->IsFilled()) {
+            if (bid->IsFilled())
+            {
                 orders_.erase(bid->GetOrderId());
                 bidList.pop_front();
             }
 
-            if (ask->IsFilled()) {
+            if (ask->IsFilled())
+            {
                 orders_.erase(ask->GetOrderId());
                 askList.pop_front();
             }
@@ -62,13 +71,13 @@ Trades OrderBook::MatchOrder() {
     return trades;
 }
 
-Trades OrderBook::AddOrder(OrderPointer order) {
+Trades OrderBook::AddOrder(OrderPointer order)
+{
     if (!order || orders_.count(order->GetOrderId()))
         return {};
 
-    OrderPointers &bookSide = (order->GetSide() == Side::Buy)
-                                  ? bids_[order->GetPrice()]
-                                  : asks_[order->GetPrice()];
+    OrderPointers &bookSide =
+        (order->GetSide() == Side::Buy) ? bids_[order->GetPrice()] : asks_[order->GetPrice()];
     bookSide.push_back(order);
 
     orders_[order->GetOrderId()] = {order, std::prev(bookSide.end())};
@@ -76,7 +85,8 @@ Trades OrderBook::AddOrder(OrderPointer order) {
     return MatchOrder();
 }
 
-void OrderBook::CancelOrder(OrderId orderId) {
+void OrderBook::CancelOrder(OrderId orderId)
+{
     auto iteratorEntry = orders_.find(orderId);
     if (iteratorEntry == orders_.end())
         return;
@@ -86,12 +96,15 @@ void OrderBook::CancelOrder(OrderId orderId) {
 
     orders_.erase(iteratorEntry);
 
-    if (orderPtr->GetSide() == Side::Buy) {
+    if (orderPtr->GetSide() == Side::Buy)
+    {
         auto &bidList = bids_.at(orderPtr->GetPrice());
         bidList.erase(listIter);
         if (bidList.empty())
             bids_.erase(orderPtr->GetPrice());
-    } else {
+    }
+    else
+    {
         auto &askList = asks_.at(orderPtr->GetPrice());
         askList.erase(listIter);
         if (askList.empty())
@@ -99,7 +112,8 @@ void OrderBook::CancelOrder(OrderId orderId) {
     }
 }
 
-Trades OrderBook::MatchOrder(OrderModify mod) {
+Trades OrderBook::MatchOrder(OrderModify mod)
+{
     if (!orders_.count(mod.GetOrderId()))
         return {};
     CancelOrder(mod.GetOrderId());
@@ -107,21 +121,22 @@ Trades OrderBook::MatchOrder(OrderModify mod) {
     return AddOrder(newOrder);
 }
 
-std::size_t OrderBook::Size() const {
-    return orders_.size();
-}
+std::size_t OrderBook::Size() const { return orders_.size(); }
 
-OrderBookLevelInfos OrderBook::GetOrderInfo() const {
+OrderBookLevelInfos OrderBook::GetOrderInfo() const
+{
     LevelInfos bidInfos, askInfos;
 
-    for (const auto &[price, orders] : bids_) {
+    for (const auto &[price, orders] : bids_)
+    {
         Quantity total = 0;
         for (auto &o : orders)
             total += o->GetRemainingQuantity();
         bidInfos.push_back({price, total});
     }
 
-    for (const auto &[price, orders] : asks_) {
+    for (const auto &[price, orders] : asks_)
+    {
         Quantity total = 0;
         for (auto &o : orders)
             total += o->GetRemainingQuantity();

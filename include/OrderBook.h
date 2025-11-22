@@ -1,19 +1,21 @@
 #pragma once
 
-#include <map>
-#include <list>
-#include <unordered_map>
-#include <vector>
-#include <memory>
+#include "LevelInfo.h"
 #include "Order.h"
+#include "OrderBookLevelInfos.h"
 #include "OrderModify.h"
 #include "Trade.h"
-#include "OrderBookLevelInfos.h"
-#include "LevelInfo.h"
+#include <list>
+#include <map>
+#include <memory>
+#include <unordered_map>
+#include <vector>
 
-class OrderBook {
-private:
-    struct OrderEntry {
+class OrderBook
+{
+  private:
+    struct OrderEntry
+    {
         OrderPointer order_{nullptr};
         OrderPointers::iterator location_;
     };
@@ -24,9 +26,9 @@ private:
 
     bool CanMatch(Side side, Price price) const;
     bool CanMatchMarket(Side side, Price price);
-    Trades MatchOrder(); 
+    Trades MatchOrder();
 
-public:
+  public:
     Trades AddOrder(OrderPointer order);
     void CancelOrder(OrderId orderId);
     Trades MatchOrder(OrderModify mod);
