@@ -1,1 +1,12 @@
+# VS Code settings
 .vscode/
+
+# Build artifacts
+*.o
+*.out
+*.exe
+main         
+/build/    
+
+# macOS metadata 
+.DS_Store
