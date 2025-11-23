@@ -1,39 +1,64 @@
 # Compiler
 CXX = g++
-CXXFLAGS = -std=c++20 -Iinclude -Wall -Wextra
+CXXFLAGS = -std=c++20 -Iinclude -Itests -Wall -Wextra
 
 # Directories
 SRC_DIR = src
+TEST_DIR = tests
 BUILD_DIR = build
 
-# Executable name
-TARGET = main
-
 # Source files
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
+SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+SHARED_SRCS := $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/orderbook_cli.cpp $(SRC_DIR)/timer_test.cpp, $(SRCS))
+SHARED_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SHARED_SRCS))
 
-# Object files in build/
-OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SRCS))
+# Main programs
+MAINS = main orderbook_cli timer_test
+MAIN_OBJS := $(patsubst %,$(BUILD_DIR)/%.o,$(MAINS))
+MAIN_SRCS := $(patsubst %,$(SRC_DIR)/%.cpp,$(MAINS))
 
-# Default target
-all: $(BUILD_DIR) $(TARGET)
+# Tests
+TEST_SRCS := $(shell find $(TEST_DIR) -name '*.cpp')
+TEST_OBJS := $(patsubst $(TEST_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(TEST_SRCS))
 
-# Create build directory if it doesn't exist
+# Default target: build everything
+all: $(BUILD_DIR) $(MAIN_OBJS) $(SHARED_OBJS) $(MAIN_OBJS:%=$(BUILD_DIR)/%) $(TEST_OBJS:%=$(BUILD_DIR)/%)
+
+# Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Link object files into executable
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
-
-# Compile .cpp to .o in build/
+# Compile shared .cpp files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean build files
-clean:
-	rm -rf $(BUILD_DIR) $(TARGET)
+# Compile main programs
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Run program
-run: $(TARGET)
-	./$(TARGET)
+# Compile test .cpp files recursively
+$(BUILD_DIR)/%.o: $(TEST_DIR)/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Link main executables
+$(BUILD_DIR)/%: $(BUILD_DIR)/%.o $(SHARED_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+# Link test executable (all tests into one)
+$(BUILD_DIR)/run_tests: $(TEST_OBJS) $(SHARED_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+# Clean build
+clean:
+	rm -rf $(BUILD_DIR)
+
+# Run main
+run: $(BUILD_DIR)/main
+	./$(BUILD_DIR)/main
+
+# Run all tests
+test: $(BUILD_DIR)/run_tests
+	./$(BUILD_DIR)/run_tests

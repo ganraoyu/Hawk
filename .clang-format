@@ -1,10 +1,8 @@
-# Use Allman braces style (opening braces on a new line)
 BasedOnStyle: LLVM
 BreakBeforeBraces: Allman
 
-# Other recommended settings
-IndentWidth: 4          # 4 spaces per indent
+IndentWidth: 4        
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 100        # max line width
+ColumnLimit: 100      
 AllowShortIfStatementsOnASingleLine: false
