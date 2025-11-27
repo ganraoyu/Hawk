@@ -9,11 +9,11 @@ BUILD_DIR = build
 
 # Source files
 SRCS := $(wildcard $(SRC_DIR)/*.cpp)
-SHARED_SRCS := $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/orderbook_cli.cpp $(SRC_DIR)/timer_test.cpp, $(SRCS))
+SHARED_SRCS := $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/timer_test.cpp, $(SRCS))
 SHARED_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SHARED_SRCS))
 
 # Main programs
-MAINS = main orderbook_cli timer_test
+MAINS = main timer_test
 MAIN_OBJS := $(patsubst %,$(BUILD_DIR)/%.o,$(MAINS))
 MAIN_SRCS := $(patsubst %,$(SRC_DIR)/%.cpp,$(MAINS))
 

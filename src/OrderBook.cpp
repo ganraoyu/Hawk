@@ -1,6 +1,7 @@
 #include "OrderBook.h"
 #include <algorithm>
 #include <numeric>
+#include <ostream>
 
 bool OrderBook::CanMatch(Side side, Price price) const
 {
@@ -8,152 +9,177 @@ bool OrderBook::CanMatch(Side side, Price price) const
     {
         if (asks_.empty())
             return false;
-        return price >= asks_.begin()->first;
+        return price >= asks_.begin()->first; // top ask
     }
     else
     {
         if (bids_.empty())
             return false;
-        return price <= bids_.begin()->first;
+        return price <= bids_.begin()->first; // top bid
     }
 }
 
-// Market order - Sell or buy at ANY price
-bool OrderBook::CanMatchMarket(Side side)
+bool OrderBook::CanMatchMarket(Side side) const
 {
     return (side == Side::Buy) ? !asks_.empty() : !bids_.empty();
 }
 
-Trades OrderBook::MatchOrder(OrderPointer orderPointer)
+bool OrderBook::CanFillFOK(OrderPointer incomingOrder, const OrderPointers &counterList) const
 {
-    Trades trades;
-    auto &incomingOrder = orderPointer;
-    const auto &incomingOrderType = incomingOrder->GetOrderType();
-
-    auto price = incomingOrder->GetPrice();
-
-    // Currently only looks at a exact price, change later on
-    OrderPointers &incomingList =
-        (incomingOrder->GetSide() == Side::Buy) ? bids_[price] : asks_[price];
-    OrderPointers &counterList =
-        (incomingOrder->GetSide() == Side::Buy) ? asks_[price] : bids_[price];
-
-    while (!counterList.empty())
+    Quantity totalAvailable{0};
+    for (auto &counterOrder : counterList)
     {
-        auto &counterOrder = counterList.front();
-
-        Quantity fillQuantity =
-            std::min(incomingOrder->GetRemainingQuantity(), counterOrder->GetRemainingQuantity());
-
-        incomingOrder->Fill(fillQuantity);
-        counterOrder->Fill(fillQuantity);
-
-        if (incomingOrder->GetSide() == Side::Buy)
-        {
-            trades.push_back(Trade{
-                TradeInfo{incomingOrder->GetOrderId(), incomingOrder->GetPrice(), fillQuantity},
-                TradeInfo{counterOrder->GetOrderId(), counterOrder->GetPrice(), fillQuantity}});
-        }
-        else
-        {
-            trades.push_back(Trade{
-                TradeInfo{counterOrder->GetOrderId(), counterOrder->GetPrice(), fillQuantity},
-                TradeInfo{incomingOrder->GetOrderId(), incomingOrder->GetPrice(), fillQuantity}});
-        }
-
-        if (incomingOrder->IsFilled() || incomingOrderType == OrderType::FillAndKill)
-        {
-            auto it = orders_.find(incomingOrder->GetOrderId());
-            if (it != orders_.end())
-            {
-                incomingList.pop_front();
-                orders_.erase(it);
-            }
+        totalAvailable += counterOrder->GetRemainingQuantity();
+        if (totalAvailable >= incomingOrder->GetRemainingQuantity())
             break;
-        }
+    }
+    return totalAvailable >= incomingOrder->GetRemainingQuantity();
+}
 
-        if (counterOrder->IsFilled())
+Quantity OrderBook::GetAvailableLiquidity(Side side, Price price, Quantity needed) const
+{
+    Quantity totalQuantity{0};
+
+    if (side == Side::Buy)
+    {
+        for (const auto &[askPrice, orderList] : asks_)
         {
-            counterList.pop_front();
-            orders_.erase(counterOrder->GetOrderId());
+            if (askPrice > price)
+                break;
+
+            for (const auto &order : orderList)
+            {
+                totalQuantity += order->GetRemainingQuantity();
+
+                if (totalQuantity >= needed)
+                    break;
+            }
+        }
+    }
+    else
+    {
+        for (const auto &[bidPrice, orderList] : bids_)
+        {
+            if (bidPrice > price)
+                break;
+            
+            for (const auto &order : orderList)
+            {
+                totalQuantity += order->GetRemainingQuantity();
+
+                if (totalQuantity >= needed)
+                    break;
+            }
         }
     }
 
-    return trades;
+    return totalQuantity;
+}
+
+Trades OrderBook::MatchOrder(OrderPointer incomingOrder)
+{
+    if (incomingOrder->GetSide() == Side::Buy)
+    {
+        return MatchAgainstBook(incomingOrder, asks_, orders_, [](Price askPrice, Price buyPrice)
+                                { return askPrice <= buyPrice; });
+    }
+    else
+    {
+        return MatchAgainstBook(incomingOrder, bids_, orders_, [](Price bidPrice, Price sellPrice)
+                                { return sellPrice <= bidPrice; });
+    }
 }
 
 Trades OrderBook::AddOrder(OrderPointer order)
 {
     if (!order || orders_.count(order->GetOrderId()))
         return {};
+    
+    if (order->GetOrderType() == OrderType::FillOrKill)
+    {
 
-    OrderPointers &bookSide =
+        auto QuantityAvailable = GetAvailableLiquidity(
+            order->GetSide(),
+            order->GetPrice(),
+            order->GetInitialQuantity()
+        );
+
+        if (QuantityAvailable < order->GetInitialQuantity())
+            return {};
+    }
+
+    if (order->GetOrderType() == OrderType::FillAndKill)
+    {
+        const OrderPointers* counterListPtr = nullptr;
+        
+        if (order->GetSide() == Side::Buy)
+        {
+            if (!asks_.empty())
+            {
+                auto iterator = asks_.begin(); 
+                if (order->GetPrice() >= iterator->first) 
+                {
+                    counterListPtr = &(iterator->second);
+                }
+            }
+        }
+        else
+        {
+            if (!bids_.empty())
+            {
+                auto iterator = bids_.begin();
+                if (order->GetPrice() <= iterator->first)
+                {
+                    counterListPtr = &(iterator->second);
+                }
+            }
+        }
+        
+        if (!counterListPtr || !CanFillFOK(order, *counterListPtr))
+        {
+            return {}; 
+        }
+    }
+    
+    auto &levelList =
         (order->GetSide() == Side::Buy) ? bids_[order->GetPrice()] : asks_[order->GetPrice()];
-    bookSide.push_back(order);
-    orders_[order->GetOrderId()] = {order, std::prev(bookSide.end())};
-
-    Trades trades;
-    auto &incomingOrder = order;
-    auto &counterList = (incomingOrder->GetSide() == Side::Buy) ? asks_[incomingOrder->GetPrice()]
-                                                                : bids_[incomingOrder->GetPrice()];
-
-    while (!counterList.empty() && !incomingOrder->IsFilled())
+    levelList.push_back(order);
+    orders_[order->GetOrderId()] = {order, std::prev(levelList.end())};
+    
+    Trades trades = MatchOrder(order);
+    
+    if (order->IsFilled() || order->GetOrderType() == OrderType::FillAndKill)
     {
-        auto &counterOrder = counterList.front();
-        Quantity fillQuantity =
-            std::min(incomingOrder->GetRemainingQuantity(), counterOrder->GetRemainingQuantity());
-
-        incomingOrder->Fill(fillQuantity);
-        counterOrder->Fill(fillQuantity);
-
-        trades.push_back(
-            Trade{TradeInfo{incomingOrder->GetOrderId(), incomingOrder->GetPrice(), fillQuantity},
-                  TradeInfo{counterOrder->GetOrderId(), counterOrder->GetPrice(), fillQuantity}});
-
-        if (counterOrder->IsFilled())
+        auto iterator = orders_.find(order->GetOrderId());
+        if (iterator != orders_.end())
         {
-            orders_.erase(counterOrder->GetOrderId());
-            counterList.pop_front();
+            levelList.erase(iterator->second.location_);
+            orders_.erase(iterator);
         }
     }
-
-    if (incomingOrder->IsFilled())
-    {
-        auto it = orders_.find(incomingOrder->GetOrderId());
-        if (it != orders_.end())
-        {
-            bookSide.erase(it->second.location_);
-            orders_.erase(it);
-        }
-    }
-
+    
     return trades;
 }
-
 void OrderBook::CancelOrder(OrderId orderId)
 {
-    auto iteratorEntry = orders_.find(orderId);
-    if (iteratorEntry == orders_.end())
+    auto iterator = orders_.find(orderId);
+    if (iterator == orders_.end())
         return;
 
-    auto orderPtr = iteratorEntry->second.order_;
-    auto listIter = iteratorEntry->second.location_;
+    auto orderPointer = iterator->second.order_;
+    auto listIterator = iterator->second.location_;
 
-    orders_.erase(iteratorEntry);
+    orders_.erase(iterator);
 
-    if (orderPtr->GetSide() == Side::Buy)
+    auto &levelList = (orderPointer->GetSide() == Side::Buy) ? bids_.at(orderPointer->GetPrice())
+                                                             : asks_.at(orderPointer->GetPrice());
+    levelList.erase(listIterator);
+    if (levelList.empty())
     {
-        auto &bidList = bids_.at(orderPtr->GetPrice());
-        bidList.erase(listIter);
-        if (bidList.empty())
-            bids_.erase(orderPtr->GetPrice());
-    }
-    else
-    {
-        auto &askList = asks_.at(orderPtr->GetPrice());
-        askList.erase(listIter);
-        if (askList.empty())
-            asks_.erase(orderPtr->GetPrice());
+        if (orderPointer->GetSide() == Side::Buy)
+            bids_.erase(orderPointer->GetPrice());
+        else
+            asks_.erase(orderPointer->GetPrice());
     }
 }
 
@@ -161,6 +187,7 @@ Trades OrderBook::MatchOrder(OrderModify mod)
 {
     if (!orders_.count(mod.GetOrderId()))
         return {};
+
     CancelOrder(mod.GetOrderId());
     auto newOrder = mod.ToOrderPointer(mod.GetOrderType());
     return AddOrder(newOrder);
